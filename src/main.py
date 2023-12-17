@@ -1,37 +1,48 @@
 import logging
 import re
 from collections import defaultdict
+from typing import List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests_cache
 from bs4 import BeautifulSoup
+from requests import Session
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, PEP_URL
+from constants import (BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, PEP_URL,
+                       SOUP_FEATURE, VERSION_STATUS_PATTERN, HTMLTag)
 from exceptions import PepStatusMismatchError
 from outputs import control_output
 from utils import find_tag, get_response
 
 
-def whats_new(session):
+def whats_new(session: Session) -> Optional[List[Tuple[str, str, str]]]:
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     response = get_response(session, whats_new_url)
     if response is None:
         return None
 
-    soup = BeautifulSoup(response.text, features='lxml')
+    soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
 
-    main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
-    div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
+    main_div = find_tag(
+        soup,
+        HTMLTag.SECTION,
+        attrs={'id': 'what-s-new-in-python'}
+    )
+    div_with_ul = find_tag(
+        main_div,
+        HTMLTag.DIV,
+        attrs={'class': 'toctree-wrapper'}
+    )
     sections_by_python = div_with_ul.find_all(
-        'li',
+        HTMLTag.LI,
         attrs={'class': 'toctree-l1'}
     )
 
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
     for section in tqdm(sections_by_python):
-        version_a_tag = find_tag(section, 'a')
+        version_a_tag = find_tag(section, HTMLTag.A)
         href = version_a_tag['href']
         version_link = urljoin(whats_new_url, href)
 
@@ -39,9 +50,9 @@ def whats_new(session):
         if response is None:
             continue
 
-        soup = BeautifulSoup(response.text, features='lxml')
-        h1 = find_tag(soup, 'h1')
-        dl = find_tag(soup, 'dl')
+        soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
+        h1 = find_tag(soup, HTMLTag.H1)
+        dl = find_tag(soup, HTMLTag.DL)
         dl_text = dl.text.replace('\n', ' ')
         results.append(
             (version_link, h1.text, dl_text)
@@ -50,21 +61,25 @@ def whats_new(session):
     return results
 
 
-def latest_versions(session):
+def latest_versions(session: Session) -> Optional[List[Tuple[str, str, str]]]:
     response = get_response(session, MAIN_DOC_URL)
     if response is None:
         return None
 
-    soup = BeautifulSoup(response.text, features='lxml')
-    sidebar = find_tag(soup, 'div', attrs={'class': 'sphinxsidebarwrapper'})
-    ul_tags = sidebar.find_all('ul')
+    soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
+    sidebar = find_tag(
+        soup,
+        HTMLTag.DIV,
+        attrs={'class': 'sphinxsidebarwrapper'}
+    )
+    ul_tags = sidebar.find_all(HTMLTag.UL)
     for ul in ul_tags:
         if 'All versions' not in ul.text:
             raise Exception('Ничего не нашлось')
-        a_tags = ul.find_all('a')
+        a_tags = ul.find_all(HTMLTag.A)
 
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
-    pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
+    pattern = VERSION_STATUS_PATTERN
     for a_tag in a_tags:
         link = a_tag['href']
 
@@ -81,20 +96,20 @@ def latest_versions(session):
     return results
 
 
-def download(session):
+def download(session: Session) -> None:
     downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
     response = get_response(session, downloads_url)
     if response is None:
         return
 
-    soup = BeautifulSoup(response.text, features='lxml')
+    soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
 
-    main_tag = find_tag(soup, 'div', attrs={'role': 'main'})
-    table_tag = find_tag(main_tag, 'table', attrs={'class': 'docutils'})
+    main_tag = find_tag(soup, HTMLTag.DIV, attrs={'role': 'main'})
+    table_tag = find_tag(main_tag, HTMLTag.TABLE, attrs={'class': 'docutils'})
 
     pdf_a4_tag = find_tag(
         table_tag,
-        'a',
+        HTMLTag.A,
         attrs={'href': re.compile(r'.+pdf-a4\.zip$')}
     )
     pdf_a4_link = pdf_a4_tag['href']
@@ -112,30 +127,30 @@ def download(session):
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
-def pep(session):
+def pep(session: Session) -> Optional[List[Tuple[str, int]]]:
     response = get_response(session, PEP_URL)
     if response is None:
         return None
 
-    soup = BeautifulSoup(response.text, features='lxml')
+    soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
 
-    main_section = find_tag(soup, 'section', attrs={'id': 'pep-content'})
+    main_section = find_tag(soup, HTMLTag.SECTION, attrs={'id': 'pep-content'})
     main_table = find_tag(
         main_section,
-        'section',
+        HTMLTag.SECTION,
         attrs={'id': 'numerical-index'}
     )
-    pep_table = find_tag(main_table, 'tbody')
-    rows = pep_table.find_all('tr')
+    pep_table = find_tag(main_table, HTMLTag.TBODY)
+    rows = pep_table.find_all(HTMLTag.TR)
 
     results = [('Статус', 'Количество')]
     status_count = defaultdict(int)
     for row in tqdm(rows):
-        status = find_tag(row, 'td').text[1:]
+        status = find_tag(row, HTMLTag.TD).text[1:]
 
         pep_suffix = find_tag(
             row,
-            'a',
+            HTMLTag.A,
             attrs={'class': 'pep reference internal'}
         )['href']
         pep_link = urljoin(PEP_URL, pep_suffix)
@@ -143,13 +158,13 @@ def pep(session):
         if response is None:
             continue
 
-        soup = BeautifulSoup(response.text, features='lxml')
+        soup = BeautifulSoup(response.text, features=SOUP_FEATURE)
         main_pep_section = find_tag(
             soup,
-            'section',
+            HTMLTag.SECTION,
             attrs={'id': 'pep-content'}
         )
-        pep_info_table = find_tag(main_pep_section, 'dl')
+        pep_info_table = find_tag(main_pep_section, HTMLTag.DL)
         pep_status = pep_info_table.find(
             string='Status'
         ).find_parent().find_next_sibling().text
@@ -178,7 +193,7 @@ MODE_TO_FUNCTION = {
 }
 
 
-def main():
+def main() -> None:
     configure_logging()
     logging.info('Парсер запущен!')
 
