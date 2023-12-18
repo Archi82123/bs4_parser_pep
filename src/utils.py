@@ -20,7 +20,11 @@ def get_response(session: Session, url: str) -> Optional[Response]:
         )
 
 
-def find_tag(soup: BeautifulSoup, tag: str, attrs: Optional[Union[dict, None]] = None) -> Optional[BeautifulSoup]:
+def find_tag(
+        soup: BeautifulSoup,
+        tag: str,
+        attrs: Optional[Union[dict, None]] = None
+) -> Optional[BeautifulSoup]:
     searched_tag = soup.find(tag, attrs=(attrs or {}))
     if searched_tag is None:
         error_msg = f'Не найден тег {tag} {attrs}'
