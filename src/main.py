@@ -79,11 +79,10 @@ def latest_versions(session: Session) -> Optional[List[Tuple[str, str, str]]]:
         a_tags = ul.find_all(HTMLTag.A)
 
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
-    pattern = VERSION_STATUS_PATTERN
     for a_tag in a_tags:
         link = a_tag['href']
 
-        text_match = re.search(pattern, a_tag.text)
+        text_match = re.search(VERSION_STATUS_PATTERN, a_tag.text)
         if text_match is not None:
             version, status = text_match.groups()
         else:
