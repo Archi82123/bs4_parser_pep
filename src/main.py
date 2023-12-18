@@ -81,7 +81,6 @@ def latest_versions(session: Session) -> Optional[List[Tuple[str, str, str]]]:
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     for a_tag in a_tags:
         link = a_tag['href']
-
         text_match = re.search(VERSION_STATUS_PATTERN, a_tag.text)
         if text_match is not None:
             version, status = text_match.groups()
